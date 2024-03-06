@@ -1,1 +1,327 @@
+/* Dental clinic application
+ * Author - Abdulla Zahied
+ * Version - V1, 06-03-2024
+ */
 
+using System;
+using System.Data.SqlClient;
+
+namespace DoctorAppointmentApp
+{
+    class Program
+    {
+        // Connection string to connect to the database
+        static string connectionString = "Data Source=ZAHIED;Initial Catalog=dental_clinic;Integrated Security=True";
+
+        // Entry point of the application
+        static void Main(string[] args)
+        {
+            // Task 1: Execute SQL Queries
+            Task1_ExecuteSQLQueries();
+
+            // Task 2: Application
+            Task2_Application();
+        }
+
+        // Task 1: Execute SQL Queries
+        static void Task1_ExecuteSQLQueries()
+        {
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                try
+                {
+                    // Open a connection to the database
+                    connection.Open();
+                    Console.WriteLine("Connection to the database opened successfully.\n");
+
+                    // Task 1: SQL Queries
+                    ListDoctorsWithTreatments(connection);
+                    FindAverageAppointmentsPerDay(connection);
+                    FindPatientWithHighestChannelsTreatment(connection);
+                    FindDoctorWithHighestUnfinishedTreatments(connection);
+                }
+                catch (Exception ex)
+                {
+                    // Handle exceptions and display an error message
+                    Console.WriteLine("Error: " + ex.Message);
+                }
+                finally
+                {
+                    // Close the connection to the database in any case
+                    connection.Close();
+                    Console.WriteLine("\nConnection to the database closed.");
+                }
+            }
+        }
+
+        // Helper method to list doctors with the total number of treatments made
+        static void ListDoctorsWithTreatments(SqlConnection connection)
+        {
+            Console.WriteLine("1) List of doctors with the total number of treatments made:");
+
+            string query = @"
+                SELECT d.FullName, COUNT(*) AS Treatments
+                FROM t_Doctor d
+                JOIN t_Appointment a ON d.id = a.doctorID
+                JOIN t_Treatment t ON a.id = t.appointmentID
+                GROUP BY d.FullName
+                ORDER BY Treatments DESC;
+        ";
+
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                Console.WriteLine($"{reader["FullName"]}: {reader["Treatments"]}");
+            }
+
+            reader.Close();
+        }
+
+        // Helper method to find the average number of appointments per day of the week
+        static void FindAverageAppointmentsPerDay(SqlConnection connection)
+        {
+            Console.WriteLine("\n2) Average number of appointments per day of the week:");
+
+            string query = @"
+                SELECT DATENAME(dw, a.appointmentDateTime) AS DayOfWeek, COUNT(a.id) AS Appointments
+                FROM t_Appointment a
+                GROUP BY DATENAME(dw, a.appointmentDateTime)
+                ORDER BY Appointments;
+            ";
+
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                Console.WriteLine($"{reader["DayOfWeek"]}: {reader["Appointments"]}");
+            }
+
+            reader.Close();
+        }
+
+        // Helper method to find the patient with the highest number of appointments for 'channels treatment'
+        static void FindPatientWithHighestChannelsTreatment(SqlConnection connection)
+        {
+            Console.WriteLine("\n3) Patient with the highest number of appointments for 'channels treatment':");
+
+            string query = @"
+                SELECT TOP 1 p.FullName, COUNT(*) AS Treatments
+                FROM t_Patient p
+                JOIN t_Appointment a ON p.id = a.patientID
+                JOIN t_Treatment t ON a.id = t.appointmentID
+                WHERE t.notes LIKE '%channels treatment%'
+                GROUP BY p.FullName
+                ORDER BY Treatments DESC;
+            ";
+
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                Console.WriteLine($"{reader["FullName"]}: {reader["Treatments"]}");
+            }
+
+            reader.Close();
+        }
+
+        // Helper method to find the doctor with the highest number of cases of unfinished treatments
+        static void FindDoctorWithHighestUnfinishedTreatments(SqlConnection connection)
+        {
+            Console.WriteLine("\n4) Doctor with the highest number of cases of unfinished treatments:");
+
+            string query = @"
+                 WITH NextAppointment AS (
+                 SELECT a1.id AS CurrentAppointmentID,
+                   LEAD(a1.id) OVER (ORDER BY a1.appointmentDateTime) AS NextAppointmentID,
+                   LEAD(a1.appointmentDateTime) OVER (ORDER BY a1.appointmentDateTime) AS NextAppointmentDateTime
+                 FROM t_Appointment a1
+                  )
+                 SELECT TOP 1 d.FullName, COUNT(*) AS Cases
+                 FROM t_Doctor d
+                 JOIN t_Appointment a1 ON d.id = a1.doctorID
+                 JOIN t_Treatment t ON a1.id = t.appointmentID
+                 JOIN NextAppointment na ON a1.id = na.CurrentAppointmentID
+                 LEFT JOIN t_Appointment a2 ON na.NextAppointmentID = a2.id
+                 WHERE a2.appointmentDateTime IS NOT NULL
+                 AND DATEADD(MINUTE, t.treatmentTime_nMinutes, a1.appointmentDateTime) > a2.appointmentDateTime
+                 GROUP BY d.FullName
+                 ORDER BY Cases DESC;
+            ";
+
+            SqlCommand command = new SqlCommand(query, connection);
+            SqlDataReader reader = command.ExecuteReader();
+
+            while (reader.Read())
+            {
+                Console.WriteLine($"{reader["FullName"]}: {reader["Cases"]}");
+            }
+
+            reader.Close();
+        }
+
+        // Task 2: Doctor Appointment Application
+        static void Task2_Application()
+        {
+            bool exit = false;
+
+            while (!exit)
+            {
+                Console.WriteLine("\nTask 2: Doctor Appointment Application");
+                Console.WriteLine("1. Create new appointment");
+                Console.WriteLine("2. Create new treatment");
+                Console.WriteLine("3. Exit");
+                Console.Write("Enter your choice: ");
+
+                string choice = Console.ReadLine();
+
+                switch (choice)
+                {
+                    case "1":
+                        CreateNewAppointment();
+                        break;
+                    case "2":
+                        CreateNewTreatment();
+                        break;
+                    case "3":
+                        exit = true;
+                        break;
+                    default:
+                        Console.WriteLine("Invalid choice. Please try again.");
+                        break;
+                }
+            }
+        }
+
+        // Helper method to create a new appointment
+        static void CreateNewAppointment()
+        {
+            Console.WriteLine("Creating a new appointment...");
+
+            Console.Write("Enter appointment date and time (YYYY-MM-DD HH:MM:SS): ");
+            string appointmentDateTimeStr = Console.ReadLine();
+
+            Console.Write("Enter patient ID: ");
+            int patientID = int.Parse(Console.ReadLine());
+
+            Console.Write("Enter doctor ID: ");
+            int doctorID = int.Parse(Console.ReadLine());
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                try
+                {
+                    connection.Open();
+
+                    // Check if the patientID exists in t_Patient before inserting into t_Appointment
+                    string checkPatientQuery = "SELECT COUNT(*) FROM t_Patient WHERE id = @PatientID";
+                    using (SqlCommand checkPatientCommand = new SqlCommand(checkPatientQuery, connection))
+                    {
+                        checkPatientCommand.Parameters.AddWithValue("@PatientID", patientID);
+                        int patientCount = (int)checkPatientCommand.ExecuteScalar();
+
+                        if (patientCount == 0)
+                        {
+                            Console.WriteLine("Error: Patient with ID " + patientID + " does not exist.");
+                            return;
+                        }
+                    }
+
+                    // Inserting the new appointment into the database
+                    string insertAppointmentQuery = @"
+                INSERT INTO t_Appointment (appointmentDateTime, patientID, doctorID)
+                VALUES (@AppointmentDateTime, @PatientID, @DoctorID);
+            ";
+
+                    using (SqlCommand command = new SqlCommand(insertAppointmentQuery, connection))
+                    {
+                        command.Parameters.AddWithValue("@AppointmentDateTime", appointmentDateTimeStr);
+                        command.Parameters.AddWithValue("@PatientID", patientID);
+                        command.Parameters.AddWithValue("@DoctorID", doctorID);
+
+                        int rowsAffected = command.ExecuteNonQuery();
+                        if (rowsAffected > 0)
+                        {
+                            Console.WriteLine("New appointment created successfully.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Failed to create a new appointment.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error: " + ex.Message);
+                }
+            }
+        }
+
+        // Helper method to create a new treatment
+        static void CreateNewTreatment()
+        {
+            Console.WriteLine("Creating a new treatment...");
+
+            Console.Write("Enter appointment ID: ");
+            int appointmentID = int.Parse(Console.ReadLine());
+
+            Console.Write("Enter treatment time in minutes: ");
+            int treatmentTime = int.Parse(Console.ReadLine());
+
+            Console.Write("Enter treatment notes: ");
+            string notes = Console.ReadLine();
+
+            using (SqlConnection connection = new SqlConnection(connectionString))
+            {
+                try
+                {
+                    connection.Open();
+
+                    // Check if the appointmentID exists in t_Appointment before inserting into t_Treatment
+                    string checkAppointmentQuery = "SELECT COUNT(*) FROM t_Appointment WHERE id = @AppointmentID";
+                    using (SqlCommand checkAppointmentCommand = new SqlCommand(checkAppointmentQuery, connection))
+                    {
+                        checkAppointmentCommand.Parameters.AddWithValue("@AppointmentID", appointmentID);
+                        int appointmentCount = (int)checkAppointmentCommand.ExecuteScalar();
+
+                        if (appointmentCount == 0)
+                        {
+                            Console.WriteLine("Error: Appointment with ID " + appointmentID + " does not exist.");
+                            return;
+                        }
+                    }
+
+                    // Inserting the new treatment into the database
+                    string insertTreatmentQuery = @"
+                INSERT INTO t_Treatment (appointmentID, treatmentTime_nMinutes, notes)
+                VALUES (@AppointmentID, @TreatmentTime, @Notes);
+            ";
+
+                    using (SqlCommand command = new SqlCommand(insertTreatmentQuery, connection))
+                    {
+                        command.Parameters.AddWithValue("@AppointmentID", appointmentID);
+                        command.Parameters.AddWithValue("@TreatmentTime", treatmentTime);
+                        command.Parameters.AddWithValue("@Notes", notes);
+
+                        int rowsAffected = command.ExecuteNonQuery();
+                        if (rowsAffected > 0)
+                        {
+                            Console.WriteLine("New treatment created successfully.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("Failed to create a new treatment.");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error: " + ex.Message);
+                }
+            }
+        }
+    }
+}
