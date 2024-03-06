@@ -11,7 +11,7 @@ namespace DoctorAppointmentApp
     class Program
     {
         // Connection string to connect to the database
-        static string connectionString = "Data Source=ZAHIED;Initial Catalog=dental_clinic;Integrated Security=True";
+        static string connectionString = "Data Source=ZIYA;Initial Catalog=dental_clinic;Integrated Security=True";
 
         // Entry point of the application
         static void Main(string[] args)
